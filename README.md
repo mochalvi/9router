@@ -23,6 +23,47 @@
 
 ---
 
+## 🛠️ Workflow Harian yang Disarankan
+
+Mulai sekarang, gunakan workflow berikut untuk pengembangan:
+
+### Pengembangan fitur
+
+```bash
+git checkout custom
+npm run dev
+
+# edit fitur
+
+npm run build
+npx eslint .
+
+git add .
+git commit -m "feat: ..."
+git push
+```
+
+### Update upstream 9Router
+
+```bash
+git fetch upstream
+
+git checkout master
+git merge --ff-only upstream/master
+git push origin master
+
+git checkout custom
+git rebase master
+```
+
+Jika tidak ada conflict, jalankan:
+
+```bash
+git push --force-with-lease
+```
+
+---
+
 ## 🤔 Why 9Router?
 
 **Stop wasting money, tokens and hitting limits:**
