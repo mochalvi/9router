@@ -13,6 +13,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
+import { authorizeApiKeyLimit } from "@/lib/apiKeyLimits/index.js";
 
 /**
  * Handle web search request for the SSE/Next.js server.
@@ -56,6 +57,11 @@ export async function handleSearch(request) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
+  }
+
+  const apiKeyLimit = await authorizeApiKeyLimit(apiKey);
+  if (apiKeyLimit.hasLimit && !apiKeyLimit.allowed) {
+    return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, "Layanan sedang tidak tersedia.");
   }
 
   if (!providerInput || typeof providerInput !== "string") {

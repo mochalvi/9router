@@ -9,6 +9,7 @@ import { getSettings } from "@/lib/localDb";
 import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { authorizeApiKeyLimit } from "@/lib/apiKeyLimits/index.js";
 
 let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -179,16 +180,21 @@ function buildGeminiNativeUrl(requestUrl, model, action) {
 
 async function validateGeminiNativeClientKey(request) {
   const settings = await getSettings();
-  if (!settings.requireApiKey) return null;
-
   const apiKey = extractGeminiClientApiKey(request);
-  if (!apiKey) {
-    return Response.json({ error: { message: "Missing API key" } }, { status: 401 });
+  if (settings.requireApiKey) {
+    if (!apiKey) {
+      return Response.json({ error: { message: "Missing API key" } }, { status: 401 });
+    }
+
+    const valid = await isValidApiKey(apiKey);
+    if (!valid) {
+      return Response.json({ error: { message: "Invalid API key" } }, { status: 401 });
+    }
   }
 
-  const valid = await isValidApiKey(apiKey);
-  if (!valid) {
-    return Response.json({ error: { message: "Invalid API key" } }, { status: 401 });
+  const apiKeyLimit = await authorizeApiKeyLimit(apiKey);
+  if (apiKeyLimit.hasLimit && !apiKeyLimit.allowed) {
+    return Response.json({ error: { message: "Layanan sedang tidak tersedia." } }, { status: 503 });
   }
 
   return null;
