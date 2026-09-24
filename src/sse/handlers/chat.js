@@ -25,6 +25,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
+import { authorizeApiKeyLimit, recordApiKeyLimitUsage } from "@/lib/apiKeyLimits/index.js";
 
 /**
  * Handle chat completion request
@@ -79,6 +80,11 @@ export async function handleChat(request, clientRawRequest = null) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
+  }
+
+  const apiKeyLimit = await authorizeApiKeyLimit(apiKey);
+  if (apiKeyLimit.hasLimit && !apiKeyLimit.allowed) {
+    return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, "Layanan sedang tidak tersedia.");
   }
 
   if (!modelStr) {
@@ -308,6 +314,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         await clearAccountError(credentials.connectionId, credentials, model);
         // "Consecutive" strikes: a success clears the breaker for this pair.
         clearAntigravityStrikes(credentials.connectionId, model);
+      },
+      onUsage: async (usage) => {
+        try {
+          await recordApiKeyLimitUsage(apiKey, usage);
+        } catch (error) {
+          log.warn("LIMIT", `Usage recording failed: ${error.message}`);
+        }
       }
     });
 

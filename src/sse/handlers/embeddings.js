@@ -13,6 +13,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { saveRequestUsage } from "@/lib/usageDb.js";
+import { authorizeApiKeyLimit, recordApiKeyLimitUsage } from "@/lib/apiKeyLimits/index.js";
 
 function exactEmbeddingUsage(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw) || raw.estimated === true) return null;
@@ -63,6 +64,11 @@ export async function handleEmbeddings(request) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
+  }
+
+  const apiKeyLimit = await authorizeApiKeyLimit(apiKey);
+  if (apiKeyLimit.hasLimit && !apiKeyLimit.allowed) {
+    return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, "Layanan sedang tidak tersedia.");
   }
 
   if (!modelStr) {
@@ -146,6 +152,7 @@ export async function handleEmbeddings(request) {
           tokens: usage,
           status: "success",
         }).catch(() => {});
+        recordApiKeyLimitUsage(apiKey, usage).catch(() => {});
       }
       return result.response;
     }
