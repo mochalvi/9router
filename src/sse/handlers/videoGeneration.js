@@ -70,12 +70,18 @@ async function readForwardableBody(request) {
     } catch {
       return { error: errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body") };
     }
-    return { raw, parsed, contentType };
+    return { raw, parsed, contentType, model: parsed?.model };
   }
   // Multipart (or any other content type): forward the exact bytes — parsing
   // and re-encoding FormData would change the multipart boundary.
+  let model = null;
+  if (contentType.includes("multipart/form-data")) {
+    try {
+      model = (await request.clone().formData()).get("model");
+    } catch { /* keep forwarding the original bytes */ }
+  }
   const buf = Buffer.from(await request.arrayBuffer());
-  return { raw: buf, parsed: null, contentType };
+  return { raw: buf, parsed: null, contentType, model };
 }
 
 async function resolveVideoProvider(parsedBody) {
@@ -116,9 +122,15 @@ export async function handleVideoCreate(request, action) {
   const bodyInfo = await readForwardableBody(request);
   if (bodyInfo.error) return bodyInfo.error;
 
-  const resolved = await resolveVideoProvider(bodyInfo.parsed);
+  const resolved = await resolveVideoProvider(bodyInfo.parsed || { model: bodyInfo.model });
   if (resolved.error) return resolved.error;
   const { provider, model } = resolved;
+  const apiKey = extractApiKey(request);
+  const apiKeyLimit = await authorizeApiKeyLimit(apiKey, bodyInfo.model || model);
+  if (apiKeyLimit.hasLimit && apiKeyLimit.limit?.models?.length && !bodyInfo.model && !model) {
+    return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, "Layanan sedang tidak tersedia.");
+  }
+  if (apiKeyLimit.hasLimit && !apiKeyLimit.allowed) return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, "Layanan sedang tidak tersedia.");
 
   // Strip the provider prefix (e.g. "xai/grok-imagine-video") before forwarding;
   // otherwise forward the original bytes untouched.

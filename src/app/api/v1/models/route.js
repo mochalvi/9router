@@ -18,6 +18,8 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
+import { extractApiKey } from "@/sse/services/auth.js";
+import { authorizeApiKeyLimit } from "@/lib/apiKeyLimits/index.js";
 
 // Qoder shares one live resolver across intl (qoder) and CN (qoder-cn); the
 // credentials carry the provider id so qoderModels picks the right region's
@@ -263,6 +265,7 @@ export async function buildModelsList(kindFilter, options = {}) {
   // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
   // cross-instance recursive loops.
   const skipDynamicFetch = options.skipDynamicFetch === true;
+  const allowedModels = Array.isArray(options.allowedModels) ? new Set(options.allowedModels) : null;
   let connections = [];
   try {
     connections = await getProviderConnections();
@@ -299,6 +302,7 @@ export async function buildModelsList(kindFilter, options = {}) {
     console.log("Could not fetch disabled models");
   }
   const isDisabled = (alias, modelId) => Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
+  const isAllowed = (modelId) => !allowedModels || allowedModels.size === 0 || allowedModels.has(modelId);
 
   const activeConnectionByProvider = new Map();
   for (const conn of connections) {
@@ -314,7 +318,7 @@ export async function buildModelsList(kindFilter, options = {}) {
 
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
-    if (!comboMatchesKinds(combo, kindFilter)) continue;
+    if (!comboMatchesKinds(combo, kindFilter) || !isAllowed(combo.name)) continue;
     const entry = {
       id: combo.name,
       object: "model",
@@ -339,7 +343,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
-        if (isDisabled(alias, model.id)) continue;
+        if (isDisabled(alias, model.id) || !isAllowed(`${alias}/${model.id}`)) continue;
         models.push({
           id: `${alias}/${model.id}`,
           object: "model",
@@ -357,6 +361,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       if (!providerAlias) continue;
 
       const modelId = String(customModel.id).trim();
+      if (!isAllowed(`${providerAlias}/${modelId}`)) continue;
       if (!modelId) continue;
 
       models.push({
@@ -494,7 +499,7 @@ export async function buildModelsList(kindFilter, options = {}) {
         // imageToText custom models stay in the LLM list (vision-capable chat models)
         const allowAsLlm = kind === "imageToText" && kindFilter.includes(LLM_KIND);
         if (!kindFilter.includes(kind) && !allowAsLlm) continue;
-        if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId)) continue;
+        if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId) || !isAllowed(`${outputAlias}/${modelId}`)) continue;
 
         const model = {
           id: `${outputAlias}/${modelId}`,
@@ -586,7 +591,8 @@ export async function GET(request) {
   try {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    const apiKeyLimit = await authorizeApiKeyLimit(extractApiKey(request));
+    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch, allowedModels: apiKeyLimit.limit?.models });
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });

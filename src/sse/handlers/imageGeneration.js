@@ -43,7 +43,7 @@ export async function handleImageGeneration(request) {
     const valid = await isValidApiKey(apiKey);
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
   }
-  const apiKeyLimit = await authorizeApiKeyLimit(apiKey);
+  const apiKeyLimit = await authorizeApiKeyLimit(apiKey, modelStr);
   if (apiKeyLimit.hasLimit && !apiKeyLimit.allowed) return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, "Layanan sedang tidak tersedia.");
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");

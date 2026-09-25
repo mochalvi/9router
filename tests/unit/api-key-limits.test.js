@@ -59,17 +59,24 @@ describe("api key limit core", () => {
       quotaTokens: 100,
       resetPeriod: "daily",
       providerLogos: ["openai", "anthropic"],
+      models: ["openai/gpt-4o", "anthropic/claude-sonnet-4"],
       showQuota: false,
     });
     expect(created.slug).toMatch(/^smoke-customer-[a-z0-9]{6}$/);
     expect(created.providerLogos).toEqual(["openai", "anthropic"]);
+    expect(created.models).toEqual(["openai/gpt-4o", "anthropic/claude-sonnet-4"]);
     expect(created.showQuota).toBe(false);
     const attempts = await Promise.all(Array.from({ length: 10 }, () => limitsDb.recordApiKeyLimitUsage("sk-smoke", { prompt_tokens: 20, completion_tokens: 0 })));
     expect(attempts.filter((result) => result.recorded)).toHaveLength(5);
     expect((await limitsDb.authorizeApiKeyLimit("sk-smoke")).allowed).toBe(false);
+    expect((await limitsDb.authorizeApiKeyLimit("sk-smoke", "openai/gpt-4o")).allowed).toBe(false);
+    await limitsDb.resetApiKeyLimitQuota(created.id);
+    expect((await limitsDb.authorizeApiKeyLimit("sk-smoke", "openai/gpt-4o")).allowed).toBe(true);
+    expect((await limitsDb.authorizeApiKeyLimit("sk-smoke", "openai/gpt-3.5")).allowed).toBe(false);
     const reset = await limitsDb.resetApiKeyLimitQuota(created.id);
     expect(reset.usedTokens).toBe(0);
     expect((await limitsDb.authorizeApiKeyLimit("sk-smoke")).allowed).toBe(true);
+    expect((await limitsDb.updateApiKeyLimit(created.id, { models: ["openai/gpt-4.1"] })).models).toEqual(["openai/gpt-4.1"]);
     expect((await limitsDb.updateApiKeyLimit(created.id, { status: "disabled" })).status).toBe("disabled");
     expect(await limitsDb.deleteApiKeyLimit(created.id)).toBe(true);
   });

@@ -25,6 +25,7 @@ const SCHEMA_SQL = `
     expiredAt TEXT,
     providerLogo TEXT,
     showQuota INTEGER NOT NULL DEFAULT 1,
+    models TEXT NOT NULL DEFAULT '[]',
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL
   );
@@ -55,6 +56,24 @@ function normalizeProviderLogos(value) {
 
 function serializeProviderLogos(value) {
   return JSON.stringify(normalizeProviderLogos(value));
+}
+
+function normalizeModels(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim()))];
+}
+
+function serializeModels(value) {
+  return JSON.stringify(normalizeModels(value));
+}
+
+function parseModels(value) {
+  if (!value) return [];
+  try {
+    return normalizeModels(JSON.parse(value));
+  } catch {
+    return normalizeModels(value);
+  }
 }
 
 function parseProviderLogos(value) {
@@ -92,6 +111,7 @@ function rowToLimit(row, now = new Date()) {
     providerLogos: parseProviderLogos(row.providerLogo),
     providerLogo: parseProviderLogos(row.providerLogo)[0] || null,
     showQuota: row.showQuota !== 0,
+    models: parseModels(row.models),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -127,6 +147,7 @@ function ensureSchema(db) {
   db.exec(SCHEMA_SQL);
   const columns = new Set(db.all("PRAGMA table_info(apiKeyLimits)").map((column) => column.name));
   if (!columns.has("showQuota")) db.exec("ALTER TABLE apiKeyLimits ADD COLUMN showQuota INTEGER NOT NULL DEFAULT 1");
+  if (!columns.has("models")) db.exec("ALTER TABLE apiKeyLimits ADD COLUMN models TEXT NOT NULL DEFAULT '[]'");
 }
 
 async function getDb() {
@@ -165,6 +186,7 @@ function validateInput(input, partial = false) {
   const providerLogos = normalizeProviderLogos(source.providerLogos ?? source.providerLogo);
   if (providerLogos.some((logo) => !getProviderLogoIds().includes(logo))) throw new Error("Invalid provider logo");
   if (source.showQuota !== undefined && typeof source.showQuota !== "boolean") throw new Error("Invalid quota visibility");
+  if (source.models !== undefined && (!Array.isArray(source.models) || source.models.some((model) => typeof model !== "string" || !model.trim()))) throw new Error("Invalid models");
 }
 
 function nextUniqueSlug(db, name, currentId = null) {
@@ -205,8 +227,8 @@ export async function getApiKeyLimitBySlug(slug) {
   return rowToLimit(row ? resetRowIfNeeded(db, row) : row);
 }
 
-export async function createApiKeyLimit({ name, apiKeyId, apiKey, status = "active", unlimitedToken = false, quotaTokens = 0, resetPeriod = "none", expiredAt = null, providerLogos = [], providerLogo = null, showQuota = true }) {
-  validateInput({ name, apiKeyId, apiKey, status, unlimitedToken, quotaTokens, resetPeriod, expiredAt, providerLogos, providerLogo, showQuota });
+export async function createApiKeyLimit({ name, apiKeyId, apiKey, status = "active", unlimitedToken = false, quotaTokens = 0, resetPeriod = "none", expiredAt = null, providerLogos = [], providerLogo = null, models = [], showQuota = true }) {
+  validateInput({ name, apiKeyId, apiKey, status, unlimitedToken, quotaTokens, resetPeriod, expiredAt, providerLogos, providerLogo, models, showQuota });
   const db = await getDb();
   const now = new Date();
   const id = crypto.randomUUID();
@@ -214,9 +236,9 @@ export async function createApiKeyLimit({ name, apiKeyId, apiKey, status = "acti
   const period = normalizePeriod(resetPeriod);
   const periodStart = getPeriodStart(period, now) || "none";
   db.run(
-    `INSERT INTO apiKeyLimits(id, name, slug, apiKeyId, apiKeyHash, status, unlimitedToken, quotaTokens, usedTokens, resetPeriod, periodStart, expiredAt, providerLogo, showQuota, createdAt, updatedAt)
-     VALUES(?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, name.trim(), slug, apiKeyId, hashApiKey(apiKey), normalizeStatus(status), unlimitedToken ? 1 : 0, unlimitedToken ? 0 : Number(quotaTokens), period, periodStart, normalizeExpiredAt(expiredAt), serializeProviderLogos(providerLogos.length ? providerLogos : providerLogo), showQuota ? 1 : 0, now.toISOString(), now.toISOString()]
+    `INSERT INTO apiKeyLimits(id, name, slug, apiKeyId, apiKeyHash, status, unlimitedToken, quotaTokens, usedTokens, resetPeriod, periodStart, expiredAt, providerLogo, showQuota, models, createdAt, updatedAt)
+     VALUES(?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, name.trim(), slug, apiKeyId, hashApiKey(apiKey), normalizeStatus(status), unlimitedToken ? 1 : 0, unlimitedToken ? 0 : Number(quotaTokens), period, periodStart, normalizeExpiredAt(expiredAt), serializeProviderLogos(providerLogos.length ? providerLogos : providerLogo), showQuota ? 1 : 0, serializeModels(models), now.toISOString(), now.toISOString()]
   );
   return getApiKeyLimitById(id);
 }
@@ -236,14 +258,15 @@ export async function updateApiKeyLimit(id, input) {
     resetPeriod: input.resetPeriod === undefined ? current.resetPeriod || "none" : normalizePeriod(input.resetPeriod),
     expiredAt: input.expiredAt === undefined ? current.expiredAt : normalizeExpiredAt(input.expiredAt),
     providerLogos: input.providerLogos === undefined && input.providerLogo === undefined ? parseProviderLogos(current.providerLogo) : normalizeProviderLogos(input.providerLogos ?? input.providerLogo),
+    models: input.models === undefined ? parseModels(current.models) : normalizeModels(input.models),
     showQuota: input.showQuota === undefined ? current.showQuota !== false : input.showQuota,
   };
   if (!next.unlimitedToken && (!Number.isSafeInteger(next.quotaTokens) || next.quotaTokens <= 0)) throw new Error("Quota Token must be a positive integer");
   const now = new Date();
   const periodStart = next.resetPeriod === current.resetPeriod ? (current.periodStart || "none") : (getPeriodStart(next.resetPeriod, now) || "none");
   db.run(
-    `UPDATE apiKeyLimits SET name = ?, apiKeyId = ?, apiKeyHash = ?, status = ?, unlimitedToken = ?, quotaTokens = ?, resetPeriod = ?, periodStart = ?, expiredAt = ?, providerLogo = ?, showQuota = ?, updatedAt = ? WHERE id = ?`,
-    [next.name, next.apiKeyId, next.apiKeyHash, next.status, next.unlimitedToken, next.unlimitedToken ? 0 : next.quotaTokens, next.resetPeriod, periodStart, next.expiredAt, serializeProviderLogos(next.providerLogos), next.showQuota ? 1 : 0, now.toISOString(), id]
+    `UPDATE apiKeyLimits SET name = ?, apiKeyId = ?, apiKeyHash = ?, status = ?, unlimitedToken = ?, quotaTokens = ?, resetPeriod = ?, periodStart = ?, expiredAt = ?, providerLogo = ?, showQuota = ?, models = ?, updatedAt = ? WHERE id = ?`,
+    [next.name, next.apiKeyId, next.apiKeyHash, next.status, next.unlimitedToken, next.unlimitedToken ? 0 : next.quotaTokens, next.resetPeriod, periodStart, next.expiredAt, serializeProviderLogos(next.providerLogos), next.showQuota ? 1 : 0, serializeModels(next.models), now.toISOString(), id]
   );
   return getApiKeyLimitById(id);
 }
@@ -269,8 +292,10 @@ export async function deleteApiKeyLimit(id) {
   return (db.run("DELETE FROM apiKeyLimits WHERE id = ?", [id])?.changes || 0) > 0;
 }
 
-export async function authorizeApiKeyLimit(apiKey, now = new Date()) {
+export async function authorizeApiKeyLimit(apiKey, modelOrNow = null, maybeNow = new Date()) {
   if (!apiKey) return { hasLimit: false, allowed: true };
+  const model = modelOrNow instanceof Date ? null : modelOrNow;
+  const now = modelOrNow instanceof Date ? modelOrNow : maybeNow;
   const db = await getDb();
   let result = { hasLimit: false, allowed: true };
   db.transaction(() => {
@@ -279,9 +304,21 @@ export async function authorizeApiKeyLimit(apiKey, now = new Date()) {
     result.hasLimit = true;
     row = resetRowIfNeeded(db, row, now);
     const state = checkRow(row, now);
-    result = { hasLimit: true, allowed: state.allowed, reason: state.isExpired ? "expired" : row.status !== "active" ? "disabled" : "exhausted", limit: rowToLimit(row, now) };
+    const limit = rowToLimit(row, now);
+    const modelAllowed = isApiKeyLimitModelAllowed(limit, model);
+    result = {
+      hasLimit: true,
+      allowed: state.allowed && modelAllowed,
+      reason: !modelAllowed ? "model" : state.isExpired ? "expired" : row.status !== "active" ? "disabled" : "exhausted",
+      limit,
+    };
   });
   return result;
+}
+
+export function isApiKeyLimitModelAllowed(limit, model) {
+  const allowedModels = normalizeModels(limit?.models);
+  return !model || allowedModels.length === 0 || allowedModels.includes(String(model));
 }
 
 export async function recordApiKeyLimitUsage(apiKey, usage, now = new Date()) {
@@ -327,6 +364,7 @@ export function getApiKeyLimitPublicData(limit) {
     formattedExpiredAt: limit.formattedExpiredAt,
     providerLogos: limit.providerLogos,
     providerLogo: limit.providerLogo,
+    models: normalizeModels(limit.models),
     showQuota: limit.showQuota,
     allowed: limit.allowed,
     isExpired: limit.isExpired,
