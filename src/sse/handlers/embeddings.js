@@ -66,7 +66,7 @@ export async function handleEmbeddings(request) {
     }
   }
 
-  const apiKeyLimit = await authorizeApiKeyLimit(apiKey);
+  const apiKeyLimit = await authorizeApiKeyLimit(apiKey, modelStr);
   if (apiKeyLimit.hasLimit && !apiKeyLimit.allowed) {
     return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, "Layanan sedang tidak tersedia.");
   }

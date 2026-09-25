@@ -1,4 +1,6 @@
 import { PROVIDER_MODELS } from "@/shared/constants/models";
+import { extractApiKey } from "@/sse/services/auth.js";
+import { authorizeApiKeyLimit } from "@/lib/apiKeyLimits/index.js";
 
 /**
  * Handle CORS preflight
@@ -17,12 +19,19 @@ export async function OPTIONS() {
  * GET /v1beta/models - Gemini compatible models list
  * Returns models in Gemini API format
  */
-export async function GET() {
+export async function GET(request) {
   try {
+    const apiKey = extractApiKey(request) || new URL(request.url).searchParams.get("key");
+    const apiKeyLimit = await authorizeApiKeyLimit(apiKey);
+    const allowedModels = Array.isArray(apiKeyLimit.limit?.models) && apiKeyLimit.limit.models.length > 0
+      ? new Set(apiKeyLimit.limit.models)
+      : null;
     const models = [];
     const seen = new Set();
 
     function addModel({ name, displayName, description, methods = ["generateContent"] }) {
+      const modelId = name.replace(/^models\//, "");
+      if (allowedModels && !allowedModels.has(modelId) && !allowedModels.has(`gemini/${modelId}`)) return;
       if (seen.has(name)) return;
       seen.add(name);
       models.push({

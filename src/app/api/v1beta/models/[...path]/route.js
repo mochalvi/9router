@@ -178,7 +178,7 @@ function buildGeminiNativeUrl(requestUrl, model, action) {
   return upstreamUrl.toString();
 }
 
-async function validateGeminiNativeClientKey(request) {
+async function validateGeminiNativeClientKey(request, model) {
   const settings = await getSettings();
   const apiKey = extractGeminiClientApiKey(request);
   if (settings.requireApiKey) {
@@ -192,7 +192,12 @@ async function validateGeminiNativeClientKey(request) {
     }
   }
 
-  const apiKeyLimit = await authorizeApiKeyLimit(apiKey);
+  let apiKeyLimit = await authorizeApiKeyLimit(apiKey, model);
+  const normalizedModel = normalizeGeminiNativeModel(model);
+  const prefixedModel = `gemini/${normalizedModel}`;
+  if (apiKeyLimit.hasLimit && !apiKeyLimit.allowed && model !== prefixedModel) {
+    apiKeyLimit = await authorizeApiKeyLimit(apiKey, prefixedModel);
+  }
   if (apiKeyLimit.hasLimit && !apiKeyLimit.allowed) {
     return Response.json({ error: { message: "Layanan sedang tidak tersedia." } }, { status: 503 });
   }
@@ -242,7 +247,7 @@ function getSafeGeminiNativeErrorText(error) {
 }
 
 async function forwardGeminiNativeRequest(request, body, model, action) {
-  const authError = await validateGeminiNativeClientKey(request);
+  const authError = await validateGeminiNativeClientKey(request, model);
   if (authError) return authError;
 
   const modelId = normalizeGeminiNativeModel(model);

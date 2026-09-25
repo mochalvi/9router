@@ -55,6 +55,10 @@ export default async function PublicLimitPage({ params }) {
 
           <div style={{ ...styles.bar, width: `${percentage}%`, background: progressColor }} />
         </div>
+        {limit.models?.length > 1 ? <div style={styles.models}>
+          <span style={styles.label}>Models</span>
+          <div style={styles.modelList}>{limit.models.map((model) => <code key={model} style={styles.model}>{model}</code>)}</div>
+        </div> : null}
         {limit.showQuota ? <div style={styles.stats}>
           <div><span style={styles.label}>Sisa</span><strong>{formatTokens(limit.remainingTokens)}</strong></div>
           <div><span style={styles.label}>Terpakai</span><strong>{formatTokens(limit.usedTokens)}</strong></div>
@@ -94,6 +98,9 @@ const styles = {
   remaining: { color: "#718096", fontSize: 15 },
   track: { height: 12, marginTop: 22, borderRadius: 999, background: "#e5eaf0", overflow: "hidden" },
   bar: { height: "100%", borderRadius: 999, transition: "width .3s ease" },
+  models: { marginTop: 26 },
+  modelList: { display: "flex", flexWrap: "wrap", gap: 6 },
+  model: { padding: "5px 8px", borderRadius: 8, background: "#eef2f6", color: "#536174", fontSize: 11 },
   stats: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 30 },
   label: { display: "block", marginBottom: 5, color: "#8a96a8", fontSize: 12 },
   warning: { margin: "24px 0 0", padding: "11px 13px", borderRadius: 10, background: "#fff1f2", color: "#be123c", fontSize: 13, fontWeight: 650 },

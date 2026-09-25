@@ -59,7 +59,7 @@ export async function handleSearch(request) {
     }
   }
 
-  const apiKeyLimit = await authorizeApiKeyLimit(apiKey);
+  const apiKeyLimit = await authorizeApiKeyLimit(apiKey, providerInput);
   if (apiKeyLimit.hasLimit && !apiKeyLimit.allowed) {
     return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, "Layanan sedang tidak tersedia.");
   }

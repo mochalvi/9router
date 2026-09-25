@@ -6,6 +6,7 @@ import Input from "@/shared/components/Input";
 import Select from "@/shared/components/Select";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import ProviderIcon from "@/shared/components/ProviderIcon";
+import ModelSelectModal from "@/shared/components/ModelSelectModal";
 
 const EMPTY_FORM = {
   name: "",
@@ -16,6 +17,7 @@ const EMPTY_FORM = {
   resetPeriod: "none",
   expiredAt: "",
   providerLogos: [],
+  models: [],
   showQuota: "yes",
 };
 
@@ -44,6 +46,7 @@ function formFromLimit(limit) {
     resetPeriod: limit.resetPeriod || "none",
     expiredAt: limit.expiredAt || "",
     providerLogos: limit.providerLogos || (limit.providerLogo ? [limit.providerLogo] : []),
+    models: limit.models || [],
     showQuota: limit.showQuota === false ? "no" : "yes",
   };
 }
@@ -54,6 +57,8 @@ export default function ApiKeyLimitsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editing, setEditing] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [showModelSelect, setShowModelSelect] = useState(false);
+  const [activeProviders, setActiveProviders] = useState([]);
   const [deleting, setDeleting] = useState(null);
   const [resetting, setResetting] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -67,6 +72,8 @@ export default function ApiKeyLimitsPage() {
       const next = await response.json();
       if (!response.ok) throw new Error(next.error || "Gagal memuat limit");
       setData(next);
+      const providersResponse = await fetch("/api/providers", { cache: "no-store" });
+      if (providersResponse.ok) setActiveProviders((await providersResponse.json()).connections || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -80,7 +87,11 @@ export default function ApiKeyLimitsPage() {
       .then(async (response) => {
         const next = await response.json();
         if (!response.ok) throw new Error(next.error || "Gagal memuat limit");
-        if (!cancelled) setData(next);
+        if (!cancelled) {
+          setData(next);
+          const providersResponse = await fetch("/api/providers", { cache: "no-store" });
+          if (providersResponse.ok) setActiveProviders((await providersResponse.json()).connections || []);
+        }
       })
       .catch((err) => {
         if (!cancelled) setError(err.message);
@@ -118,6 +129,20 @@ export default function ApiKeyLimitsPage() {
       : [...current.providerLogos, logo],
   }));
 
+  const selectModel = (model) => {
+    const value = model?.value || model?.name || model;
+    if (!value) return;
+    setForm((current) => ({
+      ...current,
+      models: current.models.includes(value) ? current.models : [...current.models, value],
+    }));
+  };
+
+  const deselectModel = (model) => {
+    const value = model?.value || model?.name || model;
+    setForm((current) => ({ ...current, models: current.models.filter((item) => item !== value) }));
+  };
+
   const submit = async (event) => {
     event?.preventDefault();
     setSaving(true);
@@ -129,6 +154,7 @@ export default function ApiKeyLimitsPage() {
       resetPeriod: form.unlimitedToken === "yes" ? "none" : form.resetPeriod,
       expiredAt: form.expiredAt || null,
       providerLogos: form.providerLogos,
+      models: form.models,
       showQuota: form.showQuota === "yes",
     };
     try {
@@ -234,20 +260,39 @@ export default function ApiKeyLimitsPage() {
           {form.unlimitedToken === "no" ? <Select label="Reset Token" value={form.resetPeriod} onChange={(event) => updateForm("resetPeriod", event.target.value)} options={[{ value: "none", label: "Tidak" }, { value: "daily", label: "Harian" }, { value: "weekly", label: "Mingguan" }, { value: "monthly", label: "Bulanan" }]} /> : <div />}
           {form.unlimitedToken === "no" ? <Select label="Tampilkan Nilai Quota" value={form.showQuota} onChange={(event) => updateForm("showQuota", event.target.value)} options={[{ value: "yes", label: "Ya" }, { value: "no", label: "Tidak" }]} /> : <div />}
           <Input label="Tanggal Expired (opsional)" type="date" value={form.expiredAt} onChange={(event) => updateForm("expiredAt", event.target.value)} />
-          <div className="sm:col-span-2">
-            <p className="mb-1.5 text-sm font-medium text-text-main">Logo Provider (opsional)</p>
-            <div className="grid max-h-48 grid-cols-2 gap-2 overflow-y-auto rounded-[10px] bg-surface-2 p-3 sm:grid-cols-3">
-              {data.providerLogos.map((logo) => {
-                const selected = form.providerLogos.includes(logo);
-                return <button type="button" key={logo} onClick={() => toggleLogo(logo)} className={`flex items-center gap-2 rounded-lg border p-2 text-left text-xs transition-colors ${selected ? "border-brand-500 bg-brand-500/10" : "border-transparent hover:bg-surface-3"}`}>
-                  <ProviderIcon providerId={logo} size={28} alt="" />
-                  <span className="truncate text-text-main">{logo}</span>
-                </button>;
-              })}
-            </div>
-          </div>
-        </form>
-      </Modal>
+           <div className="sm:col-span-2">
+             <p className="mb-1.5 text-sm font-medium text-text-main">Models (opsional)</p>
+             {form.models.length > 0 ? <div className="mb-2 flex flex-wrap gap-1.5">
+               {form.models.map((model) => <button type="button" key={model} onClick={() => deselectModel(model)} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 font-mono text-xs text-primary" title="Hapus model">
+                 {model}<span className="material-symbols-outlined text-[13px]">close</span>
+               </button>)}
+             </div> : <p className="mb-2 text-xs text-text-muted">Kosong = semua model boleh digunakan.</p>}
+             <Button type="button" variant="ghost" size="sm" icon="add" onClick={() => setShowModelSelect(true)}>Tambah Model</Button>
+           </div>
+           <div className="sm:col-span-2">
+             <p className="mb-1.5 text-sm font-medium text-text-main">Logo Provider (opsional)</p>
+             <div className="grid max-h-48 grid-cols-2 gap-2 overflow-y-auto rounded-[10px] bg-surface-2 p-3 sm:grid-cols-3">
+               {data.providerLogos.map((logo) => {
+                 const selected = form.providerLogos.includes(logo);
+                 return <button type="button" key={logo} onClick={() => toggleLogo(logo)} className={`flex items-center gap-2 rounded-lg border p-2 text-left text-xs transition-colors ${selected ? "border-brand-500 bg-brand-500/10" : "border-transparent hover:bg-surface-3"}`}>
+                   <ProviderIcon providerId={logo} size={28} alt="" />
+                   <span className="truncate text-text-main">{logo}</span>
+                 </button>;
+               })}
+             </div>
+           </div>
+         </form>
+       </Modal>
+       <ModelSelectModal
+         isOpen={showModelSelect}
+         onClose={() => setShowModelSelect(false)}
+         onSelect={selectModel}
+         onDeselect={deselectModel}
+         activeProviders={activeProviders}
+         title="Pilih Models"
+         addedModelValues={form.models}
+         closeOnSelect={false}
+       />
       <ConfirmModal isOpen={!!resetting} onClose={() => setResetting(null)} onConfirm={resetQuota} loading={saving} title="Reset Quota" message={`Reset quota untuk “${resetting?.name || ""}”? Nilai token terpakai akan kembali menjadi 0.`} confirmText="Reset Quota" variant="primary" />
       <ConfirmModal isOpen={!!deleting} onClose={() => setDeleting(null)} onConfirm={remove} loading={saving} title="Hapus API Key Limit" message={`Hapus limit “${deleting?.name || ""}”? Aksi ini tidak dapat dibatalkan.`} confirmText="Hapus" />
     </div>
