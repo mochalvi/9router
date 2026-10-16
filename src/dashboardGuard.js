@@ -3,6 +3,7 @@ import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
+import { apiKeyLimitResponse } from "@/lib/apiKeyLimits/index.js"; // custom: API key limit
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -222,7 +223,7 @@ export async function proxy(request) {
   }
 
   if (isPublicLlmApi(pathname)) {
-    if (await canAccessPublicLlmApi(request)) return NextResponse.next();
+    if (await canAccessPublicLlmApi(request)) return (await apiKeyLimitResponse(extractApiKey(request), new URL(request.url).pathname)) || NextResponse.next(); // custom: API key limit
     return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
   }
 
