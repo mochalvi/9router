@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
+import { onApiKeyUsageSaved } from "@/lib/apiKeyLimits/index.js"; // custom: API key limit
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -308,6 +309,7 @@ export async function saveRequestUsage(entry) {
 
     if (inserted) {
       pushToRing(entry);
+      onApiKeyUsageSaved(entry.apiKey, promptTokens, completionTokens, tokens.estimated === true, entry.endpoint); // custom: API key limit
       scheduleStatsEvent("update", 250);
     }
   } catch (e) {

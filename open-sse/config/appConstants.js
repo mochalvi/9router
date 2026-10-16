@@ -187,6 +187,17 @@ export const CLAUDE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official C
 export const ANTIGRAVITY_PROMPT_REWRITES = [
   { from: "You are a Claude agent, built on Anthropic's Claude Agent SDK.", to: "" },
   { from: /You are Hermes(?: Agent)?(?:,\s*(?:an intelligent AI assistant|an AI assistant|an AI agent))?(?:,?\s*(?:built|created)\s+by\s+Nous Research)?\./gi, to: "You are an AI assistant." },
+  // Local patch 2026-11-15 (upstream PR #5703/#5701): fake 429 RESOURCE_EXHAUSTED on Hermes/OpenClaw prompts
+  {from:"Be direct: match the length of your reply to the weight of the ask",to:"Match the length of your reply to the weight of the ask"},
+  {from:"/docs is your authoritative reference",to:"/docs is the authoritative reference"},
+  {from:"Hermes delivers their message as a standalone user message",to:"the harness delivers their message as a standalone user message"},
+  {from:"<!-- End Hermes runtime environment -->",to:"<!-- End runtime environment -->"},
+  {from:"# Hermes runtime environment",to:"# Runtime environment"},
+  {from:"# Google model operational directives",to:"# Operational directives"},
+  {from:/solve coding tasks\.\s+Be concise, practical, and tool-aware\./gi,to:"solve coding tasks; be concise, practical, and tool-aware."},
+  {from:/You are a personal assistant running inside OpenClaw\./gi,to:"You are a personal assistant that runs inside OpenClaw."},
+  {from:/Reporting a blocker honestly is always better than inventing a result\./gi,to:"It is always better to report a blocker honestly than to invent a result."},
+  {from:/When the user asks you to build, run, or verify something, the deliverable is a working artifact backed by real tool output\s*—\s*not a description of one\./gi,to:"When asked to build, run, or verify something, deliver a working artifact backed by real tool output, not a description of one."},
   // Claude Code prepends this line to its system prompt. The Claude-format translator strips it,
   // but OpenAI-format clients (e.g. proxies that convert Claude Code to /v1/chat/completions)
   // pass it through, and any system text containing it gets a fake 429 RESOURCE_EXHAUSTED.
